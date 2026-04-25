@@ -36,8 +36,15 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-
-
+import android.util.Base64
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.MultipartBody
+import okhttp3.RequestBody.Companion.toRequestBody
+import retrofit2.Retrofit
+import retrofit2.converter.gson.GsonConverterFactory
+import java.io.File
+import java.io.FileOutputStream
+import java.util.UUID
 
 
 internal val CyberBlack = Color(0xFF0D0D12)
@@ -60,20 +67,48 @@ class AnimeViewModel : ViewModel() {
     private val _uiState = MutableStateFlow<AppState>(AppState.Idle)
     val uiState: StateFlow<AppState> = _uiState.asStateFlow()
 
-    fun processMedia(uri: Uri) {
+    private val api: NeonAnimeApi = Retrofit.Builder()
+        .baseUrl("http://10.0.2.2:8000/")
+        .addConverterFactory(GsonConverterFactory.create())
+        .build()
+        .create(NeonAnimeApi::class.java)
+
+    fun processMedia(context: Context, uri: Uri) {
         _uiState.value = AppState.Processing
 
-
         viewModelScope.launch {
-            delay(3000)
+            try {
+                val inputStream = context.contentResolver.openInputStream(uri)
+                val bytes = inputStream?.readBytes()
+                inputStream?.close()
 
+                if (bytes == null) {
+                    _uiState.value = AppState.Error("Failed to read image")
+                    return@launch
+                }
 
-            val generatedCaption = "Lost in the digital ether. 🌃✨ #Cyberpunk #AnimeArt #NeonDreams"
-            _uiState.value = AppState.Success(
-                originalUri = uri,
-                processedUri = uri,
-                caption = generatedCaption
-            )
+                val requestBody = bytes.toRequestBody("image/*".toMediaTypeOrNull())
+                val part = MultipartBody.Part.createFormData("file", "image.jpg", requestBody)
+
+                val response = api.processMedia(part)
+
+                if (response.status == "success" && response.image_base64 != null) {
+                    val decodedBytes = Base64.decode(response.image_base64, Base64.DEFAULT)
+                    
+                    val tempFile = File(context.cacheDir, "processed_${UUID.randomUUID()}.jpg")
+                    FileOutputStream(tempFile).use { it.write(decodedBytes) }
+                    
+                    _uiState.value = AppState.Success(
+                        originalUri = uri,
+                        processedUri = Uri.fromFile(tempFile),
+                        caption = response.caption ?: "Caught in the digital crossfire. ⚡️"
+                    )
+                } else {
+                    _uiState.value = AppState.Error(response.error ?: "Unknown error from server")
+                }
+            } catch (e: Exception) {
+                _uiState.value = AppState.Error(e.localizedMessage ?: "Network error")
+            }
         }
     }
 
@@ -121,7 +156,7 @@ fun NeonAnimeScreen(
         contract = ActivityResultContracts.PickVisualMedia(),
         onResult = { uri ->
             if (uri != null) {
-                viewModel.processMedia(uri)
+                viewModel.processMedia(context, uri)
             }
         }
     )

@@ -7,8 +7,11 @@ import os
 app = FastAPI(title="NeonAnime Backend")
 
 # Free API Keys (Store these in .env files in production!)
-HUGGING_FACE_TOKEN = "your_hf_token_here"
-GEMINI_API_KEY = "your_gemini_token_here"
+from dotenv import load_dotenv
+load_dotenv()
+
+HUGGING_FACE_TOKEN = os.getenv("HUGGING_FACE_TOKEN")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 # We use a popular, fast Anime model on Hugging Face
 MODEL_URL = "https://api-inference.huggingface.co/models/proximasanfinetuning/lcm_lora_animagine_xl_3.1"
